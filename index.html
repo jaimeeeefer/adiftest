@@ -47,13 +47,16 @@
     </div>
 
     <script>
-        // Datos de estaciones y tipos de tráfico (deben coincidir con el backend)
+        // Datos de estaciones y tipos de tráfico (deben coincidir EXACTAMENTE con el backend)
         const STATION_URL_NAMES = {
             "13106": "llodio",
             "70100": "vicálvaro",
-            // ¡IMPORTANTE! Añade aquí todas las estaciones que hayas añadido en horarios_adif.py
-            "05001": "madrid-atocha",
-            "05002": "madrid-chamartin",
+            // ¡IMPORTANTE! Asegúrate de que estas estaciones y sus nombres de URL
+            // coinciden con el diccionario STATION_URL_NAMES en tu horarios_adif.py
+            "05001": "madrid-atocha", 
+            "05002": "madrid-chamartin", 
+            "05003": "valencia-joaquin-sorolla", 
+            "05004": "barcelona-sants", 
         };
 
         const TRAFFIC_TYPES = {
@@ -68,7 +71,9 @@
         // *******************************************************************
         // *** ¡MUY IMPORTANTE! Configura aquí la URL de tu API de Render ***
         // *******************************************************************
-        const RENDER_API_BASE_URL = 'https://adiftest.onrender.com'; // <-- ¡Reemplaza esto con tu URL real de Render!
+        // Reemplaza 'https://TU_NOMBRE_DE_TU_API.onrender.com' con la URL real que te dé Render
+        // al desplegar tu backend.
+        const RENDER_API_BASE_URL = 'https://adiftest.onrender.com'; // <-- ¡Tu URL REAL de Render!
         const API_ENDPOINT = '/get_train_data'; // El endpoint específico de tu API Flask
 
         // Función para poblar los select al cargar la página
@@ -125,17 +130,17 @@
                     body: formData
                 });
 
-                const data = await response.json();
+                const data = await response.json(); // Intentar siempre parsear como JSON
 
-                if (!response.ok) { // Si la respuesta HTTP no fue 2xx (ej. 403, 404, 500)
+                if (!response.ok) { // Si la respuesta HTTP no fue 2xx (ej. 400, 403, 404, 500)
                     let errorMsg = data.error || data.message || `Error ${response.status}: Error desconocido de la API.`;
                     errorMessageDiv.textContent = `Error al conectar con la API: ${errorMsg}. Asegúrate de que el backend de Render está funcionando (puede que se esté despertando si es la primera petición en un rato).`;
                     errorMessageDiv.style.display = 'block';
-                } else if (data.message) { // Si la API devuelve un mensaje de éxito sin horarios
+                } else if (data.message) { // Si la API devuelve un mensaje de éxito sin horarios (ej. "No se encontraron horarios")
                     infoMessageDiv.textContent = data.message;
                     infoMessageDiv.style.display = 'block';
                 }
-                else { // Si hay horarios
+                else { // Si hay horarios (y la respuesta fue 200 OK)
                     if (data.horarios && data.horarios.length > 0) {
                         data.horarios.forEach(train => {
                             const trainItem = document.createElement('div');
@@ -149,14 +154,15 @@
                             resultsDiv.appendChild(trainItem);
                         });
                     } else {
+                        // Aunque `data.message` ya lo cubre, esto es un fallback.
                         infoMessageDiv.textContent = 'No se encontraron horarios para los criterios seleccionados.';
                         infoMessageDiv.style.display = 'block';
                     }
                 }
             } catch (error) {
-                // Esto captura errores de red (ej. la API no está accesible, CORS)
-                console.error('Error al hacer la petición a la API:', error);
-                errorMessageDiv.textContent = 'Error de conexión de red. Asegúrate de que tu URL de la API es correcta y que tu servicio en Render está accesible. (Ver consola del navegador para más detalles).';
+                // Esto captura errores de red (ej. la API no está accesible, CORS, JSON inválido)
+                console.error('Error al hacer la petición a la API o al procesar la respuesta:', error);
+                errorMessageDiv.textContent = `Error de conexión o de red con la API. Asegúrate de que la URL "${RENDER_API_BASE_URL}" es correcta y que tu servicio en Render está accesible. (Ver consola del navegador para más detalles).`;
                 errorMessageDiv.style.display = 'block';
             } finally {
                 loadingDiv.style.display = 'none'; // Ocultar cargando
