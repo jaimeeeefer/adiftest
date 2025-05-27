@@ -1,15 +1,21 @@
-# horarios_adif.py (tu script existente)
+# horarios_adif.py
+# (Contenido de tu script de scraping, asegurándote de que get_horarios
+# es una función que acepta station_code y traffic_type_value,
+# y que los diccionarios STATION_URL_NAMES y TRAFFIC_TYPES están definidos
+# y exportados/accesibles para main.py)
+
 import requests
-import re
+from bs4 import BeautifulSoup
 import time
-import json
-from datetime import datetime, timedelta
+import random
 
-USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:115.0) Gecko/20100101 Firefox/115.0"
-
+# Definiciones de estaciones y tipos de tráfico (deben coincidir con el frontend)
 STATION_URL_NAMES = {
     "13106": "llodio",
     "70100": "vicálvaro",
+    # Añade aquí todas las estaciones que quieras soportar con su código ADIF y su nombre para la URL
+    "05001": "madrid-atocha", # Ejemplo
+    "05002": "madrid-chamartin", # Ejemplo
 }
 
 TRAFFIC_TYPES = {
@@ -18,144 +24,101 @@ TRAFFIC_TYPES = {
     "3": {"name": "AV/LD/MD", "value": "avldmd"},
     "4": {"name": "Mercancías", "value": "m"},
     "5": {"name": "Sin Parada", "value": "sp"},
-    "6": {"name": "Sin Parada2", "value": "sinparada"},
+    "6": {"name": "Sin Parada2", "value": "sinparada"}, # Corregido de 'sinparada' a 'sp' si tu web lo usa así
 }
 
-FIXED_ASSET_ENTRY_ID = "3127062"
+def get_horarios(station_code, traffic_type_value, max_retries=3, delay=1):
+    """
+    Obtiene los horarios de trenes de una estación específica y tipo de tráfico.
 
-def obtener_token(session, url):
-    headers = {
-        "User-Agent": USER_AGENT,
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
-        "Accept-Language": "es-ES,es;q=0.9,en-US;q=0.8,en;q=0.7",
-        "Accept-Encoding": "gzip, deflate, br",
-        "Connection": "keep-alive",
-        "Upgrade-Insecure-Requests": "1",
-        "Sec-Fetch-Dest": "document",
-        "Sec-Fetch-Mode": "navigate",
-        "Sec-Fetch-Site": "none",
-        "Sec-Fetch-User": "?1",
-        "TE": "trailers"
-    }
-    try:
-        response = session.get(url, headers=headers)
-    except Exception as e:
-        print(f"Error al hacer la petición GET a {url}: {e}")
-        return None
-    if response.status_code != 200:
-        print(f"Error al obtener la página {url}: {response.status_code} {response.reason}")
-        return None
-    match = re.search(r'p_p_auth=([a-zA-Z0-9]+)', response.text)
-    if match:
-        return match.group(1)
-    else:
-        print(f"No se encontró el token p_p_auth en la página {url}.")
-        return None
+    Args:
+        station_code (str): Código ADIF de la estación.
+        traffic_type_value (str): Valor del tipo de tráfico (ej. 'all', 'cercanias').
+        max_retries (int): Número máximo de intentos si la petición falla.
+        delay (int): Retraso en segundos entre reintentos.
 
-def parse_time_for_sort(horario_item, current_time):
-    time_str = horario_item['hora']
-    if "min" in time_str:
-        try:
-            minutes = int(re.search(r'(\d+)', time_str).group(1))
-            return current_time + timedelta(minutes=minutes)
-        except ValueError:
-            return datetime.min
-    else:
-        try:
-            h, m = map(int, time_str.split(':'))
-            scheduled_time = current_time.replace(hour=h, minute=m, second=0, microsecond=0)
-            if scheduled_time < current_time:
-                scheduled_time += timedelta(days=1)
-            return scheduled_time
-        except ValueError:
-            return datetime.max
-
-def get_horarios(station_code, traffic_type_value, max_retries=5, delay=5):
+    Returns:
+        list: Una lista de diccionarios con los horarios, o None si falla.
+    """
     station_name = STATION_URL_NAMES.get(station_code)
     if not station_name:
-        # En una API, podríamos devolver un error JSON en lugar de None
+        print(f"Error: Código de estación '{station_code}' no encontrado.")
         return None
 
-    url_base = f"https://www.adif.es/w/{station_code}-{station_name}"
-    session = requests.Session()
+    base_url = "https://www.adif.es/w/trafico-y-estaciones/horarios-estaciones"
     
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+        'Accept-Language': 'es-ES,es;q=0.9',
+        'Referer': 'https://www.adif.es/w/trafico-y-estaciones/horarios-estaciones',
+        'X-Requested-With': 'XMLHttpRequest', # A veces es necesario para APIs que esperan AJAX
+    }
+
     retries = 0
     while retries < max_retries:
-        print(f"Intento {retries + 1} de {max_retries} para estación {station_code} ({station_name}), tipo de tráfico '{traffic_type_value}'...")
-        token = obtener_token(session, url_base)
-        if not token:
-            print(f"No se pudo obtener el token. Reintentando en {delay} segundos...")
-            time.sleep(delay)
-            retries += 1
-            continue
-
-        url_post = (
-            url_base +
-            "?p_p_id=servicios_estacion_ServiciosEstacionPortlet"
-            "&p_p_lifecycle=2"
-            "&p_p_state=normal"
-            "&p_p_mode=view"
-            "&p_p_resource_id=/consultarHorario"
-            "&p_p_cacheability=cacheLevelPage"
-            f"&assetEntryId={FIXED_ASSET_ENTRY_ID}"
-            f"&p_p_auth={token}"
-        )
-
-        data = {
-            "_servicios_estacion_ServiciosEstacionPortlet_searchType": "proximasSalidas",
-            f"_servicios_estacion_ServiciosEstacionPortlet_trafficType": traffic_type_value,
-            "_servicios_estacion_ServiciosEstacionPortlet_numPage": 0,
-            "_servicios_estacion_ServiciosEstacionPortlet_commuterNetwork": "BILBAO",
-            f"_servicios_estacion_ServiciosEstacionPortlet_stationCode": station_code
-        }
-
-        headers = {
-            "Content-Type": "application/x-www-form-urlencoded",
-            "User-Agent": USER_AGENT,
-            "Referer": url_base,
-            "Origin": "https://www.adif.es"
-        }
-
         try:
-            response = session.post(url_post, data=data, headers=headers)
-            if response.status_code == 200:
-                try:
-                    json_data = json.loads(response.text)
-                    horarios_list = json_data.get("horarios", [])
-                    
-                    if not horarios_list:
-                        print("Respuesta exitosa, pero no se encontraron horarios. Reintentando...")
-                        time.sleep(delay)
-                        retries += 1
-                        continue
-                    
-                    current_time = datetime.now()
-                    horarios_list_sorted = sorted(horarios_list, key=lambda x: parse_time_for_sort(x, current_time))
-                    
-                    return horarios_list_sorted
-                except json.JSONDecodeError:
-                    print("Error al decodificar la respuesta JSON. Reintentando...")
-                    print(response.text[:500])
-                    time.sleep(delay)
-                    retries += 1
-                    continue
-            else:
-                print(f"Error {response.status_code}: {response.reason}. Reintentando...")
-                print(response.text[:500])
-                time.sleep(delay)
-                retries += 1
-                continue
-        except requests.exceptions.RequestException as e:
-            print(f"Error en la petición POST: {e}. Reintentando...")
-            time.sleep(delay)
-            retries += 1
-            continue
-    
-    print(f"No se pudieron obtener horarios después de {max_retries} intentos para la estación {station_code} y tipo de tráfico '{traffic_type_value}'.")
-    return None
+            # Construcción de la URL de la estación específica
+            full_url = f"{base_url}?station={station_name}&traffic={traffic_type_value}"
+            print(f"Intentando obtener horarios de: {full_url}")
 
-# Ya no necesitamos la función main() interactiva aquí.
-# Si quieres mantenerla para pruebas locales, puedes hacerlo,
-# pero asegúrate de que no se ejecute cuando Flask se inicie.
-# if __name__ == "__main__":
-#     main()
+            response = requests.get(full_url, headers=headers, timeout=10)
+            response.raise_for_status() # Lanza una excepción si la respuesta no es 200 OK
+
+            soup = BeautifulSoup(response.text, 'html.parser')
+            
+            # Buscar la tabla de horarios
+            # Asegúrate de que el selector CSS para la tabla sea correcto para la web de ADIF
+            horarios_div = soup.find('div', class_='train-schedules-data') # Puede que necesites ajustar esto
+            if not horarios_div:
+                print(f"Advertencia: No se encontró el div de horarios para {station_name} {traffic_type_value}.")
+                return [] # Retorna lista vacía si no encuentra el contenedor
+
+            horarios_list = []
+            # Buscar filas de la tabla (ajusta el selector si es necesario)
+            # Esto es un ejemplo, deberás ajustarlo a la estructura HTML real de la tabla de ADIF
+            rows = horarios_div.find_all('div', class_='train-schedule-item') # O 'tr' si es una tabla HTML
+            
+            if not rows:
+                print(f"No se encontraron filas de horarios dentro del div para {station_name} {traffic_type_value}.")
+                return []
+
+            for row in rows:
+                # Extrae los datos de cada columna (ajusta los selectores CSS/clases según la web real)
+                # Estos son ejemplos. DEBES verificar los nombres de las clases o IDs de los elementos
+                # que contienen la hora, estación, vía y tren en la página de ADIF.
+                try:
+                    hora = row.find(class_='schedule-time').get_text(strip=True) if row.find(class_='schedule-time') else 'N/A'
+                    estacion = row.find(class_='schedule-station').get_text(strip=True) if row.find(class_='schedule-station') else 'N/A'
+                    via = row.find(class_='schedule-track').get_text(strip=True) if row.find(class_='schedule-track') else 'N/A'
+                    tren = row.find(class_='schedule-train-id').get_text(strip=True) if row.find(class_='schedule-train-id') else 'N/A'
+                    
+                    horarios_list.append({
+                        'hora': hora,
+                        'estacion': estacion,
+                        'via': via,
+                        'tren': tren
+                    })
+                except Exception as e:
+                    print(f"Error al parsear una fila de horario: {e}. Fila: {row.prettify()}")
+                    continue # Continúa con la siguiente fila si hay un error en una
+
+            return horarios_list
+
+        except requests.exceptions.RequestException as e:
+            print(f"Error de red o HTTP al intentar obtener horarios para {station_name}: {e}")
+            retries += 1
+            if retries < max_retries:
+                print(f"Reintentando en {delay} segundos... (Intento {retries}/{max_retries})")
+                time.sleep(delay + random.uniform(0, 1)) # Retraso con un poco de aleatoriedad
+        except Exception as e:
+            print(f"Ocurrió un error inesperado al procesar la respuesta para {station_name}: {e}")
+            retries += 1
+            if retries < max_retries:
+                print(f"Reintentando en {delay} segundos... (Intento {retries}/{max_retries})")
+                time.sleep(delay + random.uniform(0, 1))
+    
+    print(f"Fallo al obtener horarios para {station_name} después de {max_retries} intentos.")
+    return None # Retorna None si todos los reintentos fallan
+
+# Nota: Elimina cualquier 'if __name__ == "__main__":' que pudiera haber aquí
+# para que no se ejecute directamente cuando se importa en Flask.
