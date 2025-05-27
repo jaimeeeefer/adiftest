@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Consulta Horarios Adif</title>
+    <style>
+        body { font-family: sans-serif; margin: 20px; background-color: #f4f4f4; color: #333; }
+        .container { max-width: 800px; margin: auto; background: #fff; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        h1 { color: #0056b3; text-align: center; margin-bottom: 25px; }
+        .form-group { margin-bottom: 15px; }
+        label { display: block; margin-bottom: 5px; font-weight: bold; }
+        select, button { width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px; box-sizing: border-box; }
+        button { background-color: #007bff; color: white; cursor: pointer; font-size: 16px; margin-top: 10px; }
+        button:hover { background-color: #0056b3; }
+        #loading { text-align: center; margin-top: 20px; font-weight: bold; color: #007bff; display: none; }
+        #results { margin-top: 30px; border-top: 1px solid #eee; padding-top: 20px; }
+        .train-item { background: #f9f9f9; border: 1px solid #eee; padding: 10px; margin-bottom: 10px; border-radius: 4px; }
+        .train-item strong { color: #0056b3; }
+        .error-message { color: red; font-weight: bold; margin-top: 15px; text-align: center; }
+        .info-message { color: orange; font-weight: bold; margin-top: 15px; text-align: center; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Consulta de Horarios de Trenes ADIF</h1>
+
+        <div class="form-group">
+            <label for="station_code">Estación:</label>
+            <select id="station_code">
+                {% for code, name in station_url_names.items() %}
+                <option value="{{ code }}">{{ name | title }} ({{ code }})</option>
+                {% endfor %}
+            </select>
+        </div>
+
+        <div class="form-group">
+            <label for="traffic_type">Tipo de Tráfico:</label>
+            <select id="traffic_type">
+                {% for key, type_info in traffic_types.items() %}
+                <option value="{{ key }}">{{ type_info['name'] }}</option>
+                {% endfor %}
+            </select>
+        </div>
+
+        <button onclick="getHorarios()">Consultar Horarios</button>
+
+        <div id="loading" style="display:none;">Cargando horarios...</div>
+        <div id="error-message" class="error-message" style="display:none;"></div>
+        <div id="info-message" class="info-message" style="display:none;"></div>
+        <div id="results">
+            </div>
+    </div>
+
+    <script>
+        async function getHorarios() {
+            const stationCode = document.getElementById('station_code').value;
+            const trafficType = document.getElementById('traffic_type').value;
+            const resultsDiv = document.getElementById('results');
+            const loadingDiv = document.getElementById('loading');
+            const errorMessageDiv = document.getElementById('error-message');
+            const infoMessageDiv = document.getElementById('info-message');
+
+            resultsDiv.innerHTML = ''; // Limpiar resultados anteriores
+            errorMessageDiv.style.display = 'none'; // Ocultar errores anteriores
+            infoMessageDiv.style.display = 'none'; // Ocultar mensajes de info anteriores
+            loadingDiv.style.display = 'block'; // Mostrar cargando
+
+            const formData = new URLSearchParams();
+            formData.append('station_code', stationCode);
+            formData.append('traffic_type', trafficType);
+
+            try {
+                const response = await fetch('/get_train_data', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded',
+                    },
+                    body: formData
+                });
+
+                const data = await response.json();
+
+                if (!response.ok) {
+                    errorMessageDiv.textContent = data.error || 'Error desconocido al obtener los horarios.';
+                    errorMessageDiv.style.display = 'block';
+                } else if (data.message) {
+                    infoMessageDiv.textContent = data.message;
+                    infoMessageDiv.style.display = 'block';
+                }
+                else {
+                    if (data.horarios && data.horarios.length > 0) {
+                        data.horarios.forEach(train => {
+                            const trainItem = document.createElement('div');
+                            trainItem.classList.add('train-item');
+                            trainItem.innerHTML = `
+                                <strong>Hora:</strong> ${train.hora || 'N/A'}<br>
+                                <strong>Destino:</strong> ${train.estacion || 'N/A'}<br>
+                                <strong>Vía:</strong> ${train.via || 'N/A'}<br>
+                                <strong>Tren:</strong> ${train.tren || 'N/A'}
+                            `;
+                            resultsDiv.appendChild(trainItem);
+                        });
+                    } else {
+                        infoMessageDiv.textContent = 'No se encontraron horarios para los criterios seleccionados.';
+                        infoMessageDiv.style.display = 'block';
+                    }
+                }
+            } catch (error) {
+                console.error('Error al hacer la petición:', error);
+                errorMessageDiv.textContent = 'Error de conexión o de red. Inténtalo de nuevo.';
+                errorMessageDiv.style.display = 'block';
+            } finally {
+                loadingDiv.style.display = 'none'; // Ocultar cargando
+            }
+        }
+    </script>
+</body>
+</html>
