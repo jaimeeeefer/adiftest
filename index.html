@@ -28,19 +28,13 @@
         <div class="form-group">
             <label for="station_code">Estación:</label>
             <select id="station_code">
-                {% for code, name in station_url_names.items() %}
-                <option value="{{ code }}">{{ name | title }} ({{ code }})</option>
-                {% endfor %}
-            </select>
+                </select>
         </div>
 
         <div class="form-group">
             <label for="traffic_type">Tipo de Tráfico:</label>
             <select id="traffic_type">
-                {% for key, type_info in traffic_types.items() %}
-                <option value="{{ key }}">{{ type_info['name'] }}</option>
-                {% endfor %}
-            </select>
+                </select>
         </div>
 
         <button onclick="getHorarios()">Consultar Horarios</button>
@@ -53,6 +47,47 @@
     </div>
 
     <script>
+        // ¡¡¡ REEMPLAZA ESTA URL CON LA URL DE TU API DE REPLIT !!!
+        const REPLIT_API_URL = 'https://replit.com/@jaimeferni10/adifapireplit'; 
+        // ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+        // Datos de estaciones y tipos de tráfico (duplicados aquí porque el frontend es estático)
+        const STATION_URL_NAMES = {
+            "13106": "llodio",
+            "70100": "vicálvaro",
+            // Añade más aquí si las tienes en tu backend
+        };
+
+        const TRAFFIC_TYPES = {
+            "1": {"name": "Todos", "value": "all"},
+            "2": {"name": "Cercanías", "value": "cercanias"},
+            "3": {"name": "AV/LD/MD", "value": "avldmd"},
+            "4": {"name": "Mercancías", "value": "m"},
+            "5": {"name": "Sin Parada", "value": "sp"},
+            "6": {"name": "Sin Parada2", "value": "sinparada"},
+        };
+
+        // Función para poblar los select al cargar la página
+        function populateSelects() {
+            const stationSelect = document.getElementById('station_code');
+            for (const code in STATION_URL_NAMES) {
+                const option = document.createElement('option');
+                option.value = code;
+                option.textContent = `<span class="math-inline">\{STATION\_URL\_NAMES\[code\]\.charAt\(0\)\.toUpperCase\(\) \+ STATION\_URL\_NAMES\[code\]\.slice\(1\)\} \(</span>{code})`;
+                stationSelect.appendChild(option);
+            }
+
+            const trafficSelect = document.getElementById('traffic_type');
+            for (const key in TRAFFIC_TYPES) {
+                const option = document.createElement('option');
+                option.value = key;
+                option.textContent = TRAFFIC_TYPES[key].name;
+                trafficSelect.appendChild(option);
+            }
+        }
+
+        document.addEventListener('DOMContentLoaded', populateSelects);
+
         async function getHorarios() {
             const stationCode = document.getElementById('station_code').value;
             const trafficType = document.getElementById('traffic_type').value;
@@ -71,7 +106,7 @@
             formData.append('traffic_type', trafficType);
 
             try {
-                const response = await fetch('/get_train_data', {
+                const response = await fetch(REPLIT_API_URL, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/x-www-form-urlencoded',
@@ -81,14 +116,13 @@
 
                 const data = await response.json();
 
-                if (!response.ok) {
-                    errorMessageDiv.textContent = data.error || 'Error desconocido al obtener los horarios.';
+                if (!response.ok) { // Si la respuesta HTTP no fue 2xx
+                    errorMessageDiv.textContent = data.error || 'Error desconocido al obtener los horarios de la API.';
                     errorMessageDiv.style.display = 'block';
-                } else if (data.message) {
+                } else if (data.message) { // Si la API devuelve un mensaje de éxito sin horarios
                     infoMessageDiv.textContent = data.message;
                     infoMessageDiv.style.display = 'block';
-                }
-                else {
+                } else { // Si hay horarios
                     if (data.horarios && data.horarios.length > 0) {
                         data.horarios.forEach(train => {
                             const trainItem = document.createElement('div');
@@ -107,8 +141,8 @@
                     }
                 }
             } catch (error) {
-                console.error('Error al hacer la petición:', error);
-                errorMessageDiv.textContent = 'Error de conexión o de red. Inténtalo de nuevo.';
+                console.error('Error al hacer la petición a la API:', error);
+                errorMessageDiv.textContent = 'Error de conexión con la API de Replit. Asegúrate de que esté ejecutándose.';
                 errorMessageDiv.style.display = 'block';
             } finally {
                 loadingDiv.style.display = 'none'; // Ocultar cargando
