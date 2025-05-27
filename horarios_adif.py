@@ -1,4 +1,5 @@
-import requests # type: ignore
+# horarios_adif.py (tu script existente)
+import requests
 import re
 import time
 import json
@@ -6,16 +7,11 @@ from datetime import datetime, timedelta
 
 USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:115.0) Gecko/20100101 Firefox/115.0"
 
-# Diccionario para mapear códigos de estación a nombres de URL
-# Es importante mantener este diccionario actualizado con las estaciones que te interesen.
 STATION_URL_NAMES = {
     "13106": "llodio",
     "70100": "vicálvaro",
-    # "CODIGO_ESTACION": "nombre-en-url", # Añade más estaciones aquí si las necesitas
 }
 
-# Diccionario para mapear las opciones de tipo de tráfico a los valores de la API
-# Hemos añadido "Todos" como la primera opción.
 TRAFFIC_TYPES = {
     "1": {"name": "Todos", "value": "all"},
     "2": {"name": "Cercanías", "value": "cercanias"},
@@ -25,7 +21,6 @@ TRAFFIC_TYPES = {
     "6": {"name": "Sin Parada2", "value": "sinparada"},
 }
 
-# El assetEntryId fijo como se ha indicado
 FIXED_ASSET_ENTRY_ID = "3127062"
 
 def obtener_token(session, url):
@@ -42,17 +37,14 @@ def obtener_token(session, url):
         "Sec-Fetch-User": "?1",
         "TE": "trailers"
     }
-
     try:
         response = session.get(url, headers=headers)
     except Exception as e:
         print(f"Error al hacer la petición GET a {url}: {e}")
         return None
-
     if response.status_code != 200:
         print(f"Error al obtener la página {url}: {response.status_code} {response.reason}")
         return None
-
     match = re.search(r'p_p_auth=([a-zA-Z0-9]+)', response.text)
     if match:
         return match.group(1)
@@ -61,42 +53,30 @@ def obtener_token(session, url):
         return None
 
 def parse_time_for_sort(horario_item, current_time):
-    """
-    Convierte la cadena de tiempo a un valor comparable, priorizando
-    los trenes más próximos, incluso si son del día siguiente.
-    """
     time_str = horario_item['hora']
-    
     if "min" in time_str:
         try:
             minutes = int(re.search(r'(\d+)', time_str).group(1))
-            # Los trenes en minutos son siempre los más próximos
             return current_time + timedelta(minutes=minutes)
         except ValueError:
-            return datetime.min # Un valor muy bajo para que aparezcan primero en caso de error
+            return datetime.min
     else:
         try:
             h, m = map(int, time_str.split(':'))
             scheduled_time = current_time.replace(hour=h, minute=m, second=0, microsecond=0)
-
-            # Si la hora programada es anterior a la hora actual, asumimos que es para el día siguiente
             if scheduled_time < current_time:
                 scheduled_time += timedelta(days=1)
-            
             return scheduled_time
         except ValueError:
-            return datetime.max # Un valor muy alto para que aparezcan al final en caso de error
+            return datetime.max
 
 def get_horarios(station_code, traffic_type_value, max_retries=5, delay=5):
-    # Obtener el nombre de la estación para la URL
     station_name = STATION_URL_NAMES.get(station_code)
     if not station_name:
-        print(f"Error: No se encontró el nombre de la URL para el código de estación '{station_code}'.")
-        print("Por favor, asegúrate de que el código de estación esté en el diccionario STATION_URL_NAMES.")
+        # En una API, podríamos devolver un error JSON en lugar de None
         return None
 
     url_base = f"https://www.adif.es/w/{station_code}-{station_name}"
-
     session = requests.Session()
     
     retries = 0
@@ -125,7 +105,7 @@ def get_horarios(station_code, traffic_type_value, max_retries=5, delay=5):
             "_servicios_estacion_ServiciosEstacionPortlet_searchType": "proximasSalidas",
             f"_servicios_estacion_ServiciosEstacionPortlet_trafficType": traffic_type_value,
             "_servicios_estacion_ServiciosEstacionPortlet_numPage": 0,
-            "_servicios_estacion_ServiciosEstacionPortlet_commuterNetwork": "BILBAO", # Esto podría variar según la estación
+            "_servicios_estacion_ServiciosEstacionPortlet_commuterNetwork": "BILBAO",
             f"_servicios_estacion_ServiciosEstacionPortlet_stationCode": station_code
         }
 
@@ -143,85 +123,39 @@ def get_horarios(station_code, traffic_type_value, max_retries=5, delay=5):
                     json_data = json.loads(response.text)
                     horarios_list = json_data.get("horarios", [])
                     
-                    # Si no hay horarios en la lista o la lista es vacía, reintentamos
                     if not horarios_list:
                         print("Respuesta exitosa, pero no se encontraron horarios. Reintentando...")
                         time.sleep(delay)
                         retries += 1
-                        continue # Ir al siguiente intento del bucle
+                        continue
                     
                     current_time = datetime.now()
                     horarios_list_sorted = sorted(horarios_list, key=lambda x: parse_time_for_sort(x, current_time))
                     
-                    return horarios_list_sorted # Si se obtienen horarios, retornamos
+                    return horarios_list_sorted
                 except json.JSONDecodeError:
                     print("Error al decodificar la respuesta JSON. Reintentando...")
-                    print(response.text[:500]) # Imprime los primeros 500 caracteres para depuración
+                    print(response.text[:500])
                     time.sleep(delay)
                     retries += 1
-                    continue # Ir al siguiente intento del bucle
+                    continue
             else:
                 print(f"Error {response.status_code}: {response.reason}. Reintentando...")
-                print(response.text[:500]) # Imprime los primeros 500 caracteres del error
+                print(response.text[:500])
                 time.sleep(delay)
                 retries += 1
-                continue # Ir al siguiente intento del bucle
+                continue
         except requests.exceptions.RequestException as e:
             print(f"Error en la petición POST: {e}. Reintentando...")
             time.sleep(delay)
             retries += 1
-            continue # Ir al siguiente intento del bucle
+            continue
     
-    # Si después de todos los reintentos no se pudo obtener, devuelve None
     print(f"No se pudieron obtener horarios después de {max_retries} intentos para la estación {station_code} y tipo de tráfico '{traffic_type_value}'.")
     return None
 
-# --- Función principal para ejecutar el programa ---
-def main():
-    print("Bienvenido al consultor de horarios de Adif.")
-    
-    # Solicitar al usuario el código de la estación
-    station_code = input("Por favor, introduce el código de la estación (ej. 13106 para Llodio): ")
-    
-    if not station_code.isdigit():
-        print("Código de estación inválido. Debe ser un número.")
-        return
-    
-    if station_code not in STATION_URL_NAMES:
-        print(f"El código de estación '{station_code}' no se encuentra en la lista de estaciones soportadas.")
-        print("Por favor, añade el código y su nombre de URL al diccionario 'STATION_URL_NAMES' en el script.")
-        return
-
-    # Solicitar al usuario el tipo de tráfico
-    print("\nSelecciona el tipo de tráfico:")
-    for key, value in TRAFFIC_TYPES.items():
-        print(f"  {key}: {value['name']}")
-    
-    traffic_choice = input("Introduce el número de tu elección: ")
-
-    selected_traffic = TRAFFIC_TYPES.get(traffic_choice)
-    if not selected_traffic:
-        print("Opción de tipo de tráfico inválida. Por favor, selecciona un número de la lista.")
-        return
-    
-    traffic_type_value = selected_traffic['value']
-
-    print(f"\nConsultando horarios para la estación: {station_code} y tipo de tráfico: {selected_traffic['name']}...")
-    # La función get_horarios ahora maneja sus propios reintentos.
-    horarios_obtenidos = get_horarios(station_code, traffic_type_value, max_retries=10, delay=5) 
-
-    # Ahora, en main, solo necesitamos verificar el resultado final de get_horarios
-    if horarios_obtenidos is None:
-        print("\nEl proceso falló definitivamente. No se pudieron obtener los horarios de Adif.")
-    elif not horarios_obtenidos: 
-        print(f"\nNo se encontraron horarios para la estación {station_code} y el tipo de tráfico '{selected_traffic['name']}' después de múltiples intentos.")
-        print("Esto puede significar que no hay trenes programados para el período actual con esos criterios.")
-        print("\nProceso finalizado con éxito (sin horarios encontrados).")
-    else:
-        print(f"\n--- Horarios para estación {station_code} ({selected_traffic['name']}) ---")
-        for horario in horarios_obtenidos:
-            print(f"  Hora: {horario.get('hora')}, Destino: {horario.get('estacion')}, Vía: {horario.get('via')}, Tren: {horario.get('tren')}")
-        print("\nProceso finalizado con éxito.")
-
-if __name__ == "__main__":
-    main()
+# Ya no necesitamos la función main() interactiva aquí.
+# Si quieres mantenerla para pruebas locales, puedes hacerlo,
+# pero asegúrate de que no se ejecute cuando Flask se inicie.
+# if __name__ == "__main__":
+#     main()
