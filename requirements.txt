@@ -1,3 +1,5 @@
-# Asegúrate de estar en el directorio de tu script
-pip install requests beautifulsoup4 flask # Si no las tienes instaladas
-pip freeze > requirements.txt
+requests
+beautifulsoup4
+Flask
+Flask-Cors
+gunicorn
