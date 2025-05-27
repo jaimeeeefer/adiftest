@@ -1,0 +1,3 @@
+# Asegúrate de estar en el directorio de tu script
+pip install requests beautifulsoup4 # Si no las tienes instaladas
+pip freeze > requirements.txt
