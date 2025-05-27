@@ -10,7 +10,7 @@
         h1 { color: #0056b3; text-align: center; margin-bottom: 25px; }
         .form-group { margin-bottom: 15px; }
         label { display: block; margin-bottom: 5px; font-weight: bold; }
-        select, button, input[type="url"] { width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px; box-sizing: border-box; }
+        select, button { width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px; box-sizing: border-box; }
         button { background-color: #007bff; color: white; cursor: pointer; font-size: 16px; margin-top: 10px; }
         button:hover { background-color: #0056b3; }
         #loading { text-align: center; margin-top: 20px; font-weight: bold; color: #007bff; display: none; }
@@ -19,22 +19,11 @@
         .train-item strong { color: #0056b3; }
         .error-message { color: red; font-weight: bold; margin-top: 15px; text-align: center; }
         .info-message { color: orange; font-weight: bold; margin-top: 15px; text-align: center; }
-        .api-url-input { margin-bottom: 20px; padding: 15px; background-color: #ffe6e6; border-radius: 5px; border: 1px solid #ffb3b3; display: none; /* Oculto por defecto */ }
-        .api-url-input p { margin-top: 0; font-size: 0.9em; color: #cc0000; }
-        #url-status { font-size: 0.8em; margin-top: 5px; }
     </style>
 </head>
 <body>
     <div class="container">
         <h1>Consulta de Horarios de Trenes ADIF</h1>
-
-        <div class="api-url-input" id="apiUrlInputContainer">
-            <p>La conexión con la API ha fallado o no está configurada. Por favor, introduce la Dev URL de tu API de Replit:</p>
-            <label for="replit_api_base_url">URL Base de la API de Replit:</label>
-            <input type="url" id="replit_api_base_url" placeholder="Ej: https://tumiapi.tuusuario.replit.dev">
-            <button onclick="saveApiUrl()">Guardar y Reintentar</button>
-            <p id="url-status"></p>
-        </div>
 
         <div class="form-group">
             <label for="station_code">Estación:</label>
@@ -58,12 +47,13 @@
     </div>
 
     <script>
-        // Datos de estaciones y tipos de tráfico (duplicados aquí)
+        // Datos de estaciones y tipos de tráfico (deben coincidir con el backend)
         const STATION_URL_NAMES = {
             "13106": "llodio",
             "70100": "vicálvaro",
-            // ¡IMPORTANTE! Añade más estaciones aquí si las tienes en tu backend
-            // para que aparezcan en el desplegable del frontend.
+            // ¡IMPORTANTE! Añade aquí todas las estaciones que hayas añadido en horarios_adif.py
+            "05001": "madrid-atocha",
+            "05002": "madrid-chamartin",
         };
 
         const TRAFFIC_TYPES = {
@@ -72,22 +62,14 @@
             "3": {"name": "AV/LD/MD", "value": "avldmd"},
             "4": {"name": "Mercancías", "value": "m"},
             "5": {"name": "Sin Parada", "value": "sp"},
-            "6": {"name": "Sin Parada2", "value": "sinparada"},
-            // ¡IMPORTANTE! Añade más tipos de tráfico aquí si los tienes en tu backend.
+            "6": {"name": "Sin Parada2", "value": "sinparada"}, 
         };
 
+        // *******************************************************************
+        // *** ¡MUY IMPORTANTE! Configura aquí la URL de tu API de Render ***
+        // *******************************************************************
+        const RENDER_API_BASE_URL = 'https://adiftest.onrender.com'; // <-- ¡Reemplaza esto con tu URL real de Render!
         const API_ENDPOINT = '/get_train_data'; // El endpoint específico de tu API Flask
-
-        let currentApiBaseUrl = ''; // Variable para almacenar la URL base actual
-
-        const apiUrlInputContainer = document.getElementById('apiUrlInputContainer');
-        const replitApiBaseUrlInput = document.getElementById('replit_api_base_url');
-        const urlStatusElement = document.getElementById('url-status');
-        const resultsDiv = document.getElementById('results');
-        const loadingDiv = document.getElementById('loading');
-        const errorMessageDiv = document.getElementById('error-message');
-        const infoMessageDiv = document.getElementById('info-message');
-
 
         // Función para poblar los select al cargar la página
         function populateSelects() {
@@ -108,67 +90,21 @@
             }
         }
 
-        // Función para cargar la URL guardada del localStorage al iniciar la página
-        function loadApiUrl() {
-            const savedUrl = localStorage.getItem('replitApiBaseUrl');
-            if (savedUrl) {
-                currentApiBaseUrl = savedUrl;
-                replitApiBaseUrlInput.value = savedUrl; // Precargar el input por si se muestra
-                console.log("URL de API cargada desde localStorage:", currentApiBaseUrl);
-                // No mostrar el contenedor de URL al inicio si hay URL guardada
-                apiUrlInputContainer.style.display = 'none';
-            } else {
-                // Si no hay URL guardada, mostrar el contenedor de URL
-                apiUrlInputContainer.style.display = 'block';
-                urlStatusElement.textContent = 'Por favor, introduce la URL de tu API de Replit.';
-                urlStatusElement.style.color = 'orange';
-            }
-        }
-
-        // Función para guardar la URL introducida por el usuario y ocultar el campo
-        function saveApiUrl() {
-            const newUrl = replitApiBaseUrlInput.value.trim();
-
-            if (newUrl) {
-                localStorage.setItem('replitApiBaseUrl', newUrl);
-                currentApiBaseUrl = newUrl;
-                urlStatusElement.textContent = 'URL guardada exitosamente. Intentando de nuevo...';
-                urlStatusElement.style.color = 'green';
-                apiUrlInputContainer.style.display = 'none'; // Ocultar después de guardar
-                getHorarios(); // Reintentar la consulta automáticamente
-            } else {
-                urlStatusElement.textContent = 'Por favor, introduce una URL válida.';
-                urlStatusElement.style.color = 'red';
-            }
-        }
-
-        // Función para mostrar el campo de entrada de la URL en caso de error
-        function showApiUrlInput(message = 'La conexión con la API ha fallado. Por favor, actualiza la URL de Replit si ha cambiado.') {
-            errorMessageDiv.textContent = message;
-            errorMessageDiv.style.display = 'block';
-            apiUrlInputContainer.style.display = 'block';
-            urlStatusElement.textContent = ''; // Limpiar estado anterior de URL
-            urlStatusElement.style.color = '';
-        }
-
         document.addEventListener('DOMContentLoaded', () => {
             populateSelects();
-            loadApiUrl(); // Cargar la URL al cargar la página
         });
 
         async function getHorarios() {
             // Ocultar mensajes anteriores y mostrar cargando
+            const resultsDiv = document.getElementById('results');
+            const loadingDiv = document.getElementById('loading');
+            const errorMessageDiv = document.getElementById('error-message');
+            const infoMessageDiv = document.getElementById('info-message');
+
             resultsDiv.innerHTML = '';
             errorMessageDiv.style.display = 'none';
             infoMessageDiv.style.display = 'none';
             loadingDiv.style.display = 'block';
-
-            if (!currentApiBaseUrl) {
-                // Si no hay URL cargada, mostrar el input y pedirla
-                showApiUrlInput('La URL de la API de Replit no está configurada.');
-                loadingDiv.style.display = 'none';
-                return;
-            }
 
             const stationCode = document.getElementById('station_code').value;
             const trafficType = document.getElementById('traffic_type').value;
@@ -178,7 +114,7 @@
             formData.append('traffic_type', trafficType);
 
             try {
-                const fullApiUrl = currentApiBaseUrl + API_ENDPOINT;
+                const fullApiUrl = RENDER_API_BASE_URL + API_ENDPOINT;
                 console.log("Intentando llamar a la API:", fullApiUrl);
 
                 const response = await fetch(fullApiUrl, {
@@ -193,12 +129,11 @@
 
                 if (!response.ok) { // Si la respuesta HTTP no fue 2xx (ej. 403, 404, 500)
                     let errorMsg = data.error || data.message || `Error ${response.status}: Error desconocido de la API.`;
-                    showApiUrlInput(errorMsg + " Revisa la URL de la API.");
+                    errorMessageDiv.textContent = `Error al conectar con la API: ${errorMsg}. Asegúrate de que el backend de Render está funcionando (puede que se esté despertando si es la primera petición en un rato).`;
+                    errorMessageDiv.style.display = 'block';
                 } else if (data.message) { // Si la API devuelve un mensaje de éxito sin horarios
                     infoMessageDiv.textContent = data.message;
                     infoMessageDiv.style.display = 'block';
-                    // Si todo va bien, asegúrate de que el input de URL esté oculto
-                    apiUrlInputContainer.style.display = 'none';
                 }
                 else { // Si hay horarios
                     if (data.horarios && data.horarios.length > 0) {
@@ -217,13 +152,12 @@
                         infoMessageDiv.textContent = 'No se encontraron horarios para los criterios seleccionados.';
                         infoMessageDiv.style.display = 'block';
                     }
-                    // Si todo va bien, asegúrate de que el input de URL esté oculto
-                    apiUrlInputContainer.style.display = 'none';
                 }
             } catch (error) {
                 // Esto captura errores de red (ej. la API no está accesible, CORS)
                 console.error('Error al hacer la petición a la API:', error);
-                showApiUrlInput('Error de conexión o de red con la API de Replit. Asegúrate de que tu Repl está ejecutándose y que la URL es correcta. (Detalles en la consola del navegador)');
+                errorMessageDiv.textContent = 'Error de conexión de red. Asegúrate de que tu URL de la API es correcta y que tu servicio en Render está accesible. (Ver consola del navegador para más detalles).';
+                errorMessageDiv.style.display = 'block';
             } finally {
                 loadingDiv.style.display = 'none'; // Ocultar cargando
             }
